@@ -1,0 +1,122 @@
+---
+title: "Bayesian estimation wih MCMC"
+author: |
+     | Kornpob Bhirombhakdi
+     | bkornpob@gmail.com
+     | kb291313@ohio.edu
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Description of problem
+
+We would like to estimate the biasness of a flipping coin.
+The coin may bias towards tail (0) or head (1).
+The biasness is parameterized by $\theta \in [0,1]$ for $\theta = 0$ as always flipping head and vice versa.
+
+# Method
+
+```{r}
+theta = 0.3
+
+N = 10
+y = list()
+seed = 123
+set.seed(seed)
+y$rand = runif(n=N, min=0, max=1)
+y$flip = y$rand
+y$flip[y$flip < theta] = 0
+y$flip[!(y$flip < theta)] = 1
+
+z = sum(y$flip)
+
+likelihood <- function(z, N, theta){
+     # likelihood is assumed to be binomial
+     # z = number of flipping head (for head =1, tail = 0)
+     # N = number of trials
+     # theta = biasness (theta = 0 for always flipping head)
+     return( theta^(N-z) * (1.0 - theta)^z )
+}
+
+prior <- function(theta){
+     # prior is assumed to be uniform (0,1)
+     if (theta > 1.0 || theta < 0.0) { theta = 0.0 }
+     return(theta)
+}
+
+posterior <- function(z, N, theta){
+     # postetior \propto likelihook * prior
+     return( likelihood(z=z, N=N, theta=theta) * prior(theta=theta) )
+}
+
+proposeSize <- function(n){
+     # proposed walk size as N(0,0.1^2)
+     return( rnorm(n=n, mean=0, sd=0.1) )
+}
+
+pmove <- function(thetapro, thetacur, z, N){
+     # probability of walking
+     postpro = posterior(z=z, N=N, theta=thetapro)
+     postcur = posterior(z=z, N=N, theta=thetacur)
+     return( min(1.0, postpro/postcur) )
+}
+
+update <- function(pmove){
+     # update the parameter
+     # return TRUE = move
+     x = FALSE
+     if (runif(n=1, min=0, max=1) < pmove) {x = TRUE}
+     return(x)
+}
+
+iter = 1000
+thetacur = c(0.9)
+accept = c(TRUE)
+size = proposeSize(n=iter)
+for (i in 2:iter){
+     thetapro = thetacur[i-1] + size[i-1]
+     p = pmove(thetapro=thetapro, thetacur=thetacur[i-1], z=z, N=N)
+     accept[i] = update(p)
+     thetacur[i] = thetacur[i-1]
+     if (accept[i]) {thetacur[i] = thetapro}
+}
+```
+
+We gather the data from flipping the coin $N$ times. Each time, the data is recorded as $y_i \in {0,1}$ for $i = 1,...,N$.
+Then, we estimate the biasness $\hat{\theta}$ given the data by applying Bayesian estimation.
+We apply Markov Chain Monte Carlo (MCMC) simulation with Metropolis Hasting algorithm for sampling and constructing the posterior distribution of the biasness $\theta$: $p(\theta | y)$.
+
+1. Specify the $\theta$ to be a known value. We use $\theta$ = `r theta` in this example.
+
+2. Simulate data for the flipping by randomly drawn from uniform (0,1), and set to be tail if the drawn is less than `r theta` and head for otherwise. We use seed = `r seed` and $N$ = `r N` in this example.
+
+3. Set likelihood as binomial function $p(z,N | \tilde{\theta}) = C(z,N) \times \tilde{\theta}^{N-z} (1-\tilde{\theta})^z$ where $\tilde{\theta}$ is the biasness, $z$ is number of flipping head, and $C$ is a normalization constant, which can be discarded in Bayesian estimation.
+
+4. Set prior as uniform (0,1): $p(\tilde{\theta}) = \tilde{\theta} \in [0,1]$.
+
+5. Initialize the parameter. We use $\theta_{cur}$ = `r thetacur[1]` in this example.
+
+6. Set proposed walk size $\Delta \theta \sim N(0,0.1^2)$, i.e., $\theta_{pro} = \theta_{cur} + \Delta \theta$ where $\theta_{pro}$ is the proposed parameter, and $\theta_{cur}$ is the current parameter.
+
+7. Determine the probability of walking to $\theta_{pro}$: $p_{move} = min(1, \frac{p(\theta_{pro} | y)}{p(\theta_{cur} | y)})$ where the posterior $p(\tilde{\theta} | y) \propto p(y | \tilde{\theta}) p(\tilde{\theta})$, and $y = \{z,N\}$ [^1].
+
+[^1]: We note that, generally, $p_{move} = \frac{p(\theta_{pro}|y) / q(\theta_{pro}|\theta_{cur})}{p(\theta_{cur}|y) / q(\theta_{cur}|\theta_{pro})}$ where $q$ is proposed distribution, which is normal distribution in our case. If $q$ is symmetric around its mean, $q(\theta_i|\theta_j) = q(\theta_j|\theta_i)$ for any $i,j$.
+
+8. Update the parameter: $\theta_{cur} = \theta_{pro}$ if $p_{move} > x$, and $\theta_{cur} = \theta_{cur}$ otherwise, where $x$ is randomly drawn from uniform (0,1). 
+
+9. Iterate step 6-8 until stable. Record $\theta_{cur}$ of every loop.
+
+10. Discard $\theta_{cur}$ before stable. $\hat{\theta}$ distributes as $\theta_{cur} | \textrm{stable}$.
+
+# Result
+
+By choosing the stable state after 100-th iteration, as we can see that the expectation of $\hat{\theta} \approx$ 0.3.
+
+```{r}
+plot(thetacur, type="l")
+thetahat = thetacur[100:length(thetacur)]
+hist(thetahat)
+summary(thetahat)
+```
