@@ -1,0 +1,97 @@
+---
+title: "Linear regression with Markov Chain Monte Carlo Bayesian estimation"
+author: |
+     | Kornpob Bhirombhakdi
+     | bkornpob@gmail.com
+     | kb291313@ohio.edu
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Description of problem
+
+In this example, we will fit a linear model -- $y = \beta_1 + \beta_2 x$ -- with Bayesian method. Markov Chain Monte Carlo with Metropolis-Gibbs sampling is applied.
+
+# Generating data
+
+```{r}
+# simulating data
+# y = beta1 + beta2 * x + err
+# err ~ N(0,sigma^2)
+set.seed(123)
+beta1Real = 0.0
+beta2Real = 1.0
+sigmaReal = 0.1
+
+n = 10
+err = rnorm(n = n, mean = 0.0, sd = sigmaReal)
+x = runif(n = n, min = -1.0, max = 1.0)
+y = beta1Real + beta2Real * x + err
+```
+
+We assume the observed values $\tilde{y} = \beta_1 + \beta_2 x + e$ where $e$ is the error of observation. We assume $e ~ N(0,\sigma^2)$ with $\sigma =$ `r sigmaReal`. Also, we assume $\beta_1 =$ `r beta1Real` and $\beta_2 =$ `r beta2Real`.
+
+# Estimation
+
+```{r, cache=TRUE}
+propose <- function(betaCur){
+     return(rnorm(n = 1,mean = 0.0,sd = 0.1))
+}
+
+likelihood <- function(y,x,n,beta1,beta2,sigma){
+     return( dmnorm(x = y,mean = beta1+beta2*x,varcov = (sigma^2)*diag(n)) )
+}
+
+priorBeta1 <- function(beta1){
+     return( dunif(x = beta1,min = -2.0,max = 2.0) )
+}
+
+library(mnormt)
+
+# initialization
+iter=1000
+beta1 = c(); acceptBeta1 = c()
+beta2 = c(); acceptBeta2 = c()
+beta1[1] = runif(1); acceptBeta1[1]=1
+beta2[1] = runif(1); acceptBeta2[1]=1
+
+for (i in c(2:iter)){
+     #beta1
+     betaCur = beta1[i-1]
+     betaProp = betaCur + propose(betaCur)
+     a = likelihood(y = y,x = x,n = n,beta1 = betaProp,beta2 = beta2Real,sigma = sigmaReal) * priorBeta1(betaProp)
+     b = likelihood(y = y,x = x,n = n,beta1 = betaCur,beta2 = beta2Real,sigma = sigmaReal) * priorBeta1(betaCur)
+     pmove = a/b
+     if (pmove > runif(1)){
+          beta1[i] = betaProp
+          acceptBeta1[i] = 1
+     } else{
+          beta1[i] = betaCur
+          acceptBeta1[i] = 0
+     }
+     #beta2
+     betaCur = beta2[i-1]
+     betaProp = betaCur + propose(betaCur)
+     a = likelihood(y = y,x = x,n = n,beta1 = beta1[i],beta2 = betaProp,sigma = sigmaReal) * priorBeta1(betaProp)
+     b = likelihood(y = y,x = x,n = n,beta1 = beta1[i],beta2 = betaCur,sigma = sigmaReal) * priorBeta1(betaCur)
+     pmove = a/b
+     if (pmove > runif(1)){
+          beta2[i] = betaProp
+          acceptBeta2[i] = 1
+     } else{
+          beta2[i] = betaCur
+          acceptBeta2[i] = 0
+     }}
+
+# output
+startStable=200
+plot(beta1,type="l"); plot(beta2,type="l")
+hist(beta1); hist(beta2)
+c(mean(beta1[200:iter]), mean(beta2[200:iter]))
+c(sd(beta1[200:iter]), sd(beta2[200:iter]))
+c(mean(acceptBeta1[200:iter]), mean(acceptBeta2[200:iter]))
+```
+
+We assume the likelihood function to be multivariate normal distribution, prior to be uniform distribution, and proposal distribution to be normal distribution. Parameters in those distribution are tuned to yield stable chain within reasonable steps. We note that we do not apply logarithmic scale here, because the fine tune makes no computational complication due to large number. By choosing the stable chain starting at the 200-th step, the estimated parameters are consistent with the real values within 1-$\sigma$ interval.
